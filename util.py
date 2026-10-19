@@ -1,10 +1,22 @@
 import pathlib
 from typing import Optional
 
+import numpy as np
 import torch
 from invokeai.backend.raw_model import RawModel
+from invokeai.invocation_api import oklch_from_srgb, srgb_from_oklch
 from PIL import Image
 from transformers import AutoImageProcessor, AutoModelForDepthEstimation
+
+
+def rgb_to_oklch(rgb: np.ndarray) -> np.ndarray:
+    rgb_tensor = torch.from_numpy(np.clip(rgb, 0.0, 1.0)).permute(2, 0, 1).to(dtype=torch.float64)
+    return oklch_from_srgb(rgb_tensor).permute(1, 2, 0).numpy()
+
+
+def oklch_to_rgb(oklch: np.ndarray) -> np.ndarray:
+    oklch_tensor = torch.from_numpy(oklch).permute(2, 0, 1).to(dtype=torch.float64)
+    return srgb_from_oklch(oklch_tensor).permute(1, 2, 0).numpy()
 
 
 class MyDepthMapPipeline(RawModel):

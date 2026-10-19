@@ -17,6 +17,8 @@ from invokeai.invocation_api import (
 from PIL import Image
 from scipy.interpolate import CubicSpline
 
+from .util import oklch_to_rgb, rgb_to_oklch  # noqa: TID252
+
 
 @invocation(
     "curves_invocation", title="CurvesInvocation", tags=["curves", "interpolation", "dithering"], version="1.2.0"
@@ -35,83 +37,6 @@ class CurvesInvocation(BaseInvocation, WithMetadata, WithBoard):
         default="blue_noise", description="Dithering method"
     )
     channel: Literal["RGB", "R", "G", "B", "L (OKLCH)"] = InputField(default="RGB", description="Channel to alter")
-
-    def srgb_to_linear(self, rgb):
-        a = 0.055
-        return np.where(rgb <= 0.04045, rgb / 12.92, ((rgb + a) / (1 + a)) ** 2.4)
-
-    def linear_to_srgb(self, linear):
-        a = 0.055
-        linear = np.clip(linear, 0.0, None)
-        return np.where(linear <= 0.0031308, 12.92 * linear, (1 + a) * linear ** (1 / 2.4) - a)
-
-    def rgb_to_oklch(self, rgb):
-        rgb = np.clip(rgb, 0.0, 1.0)
-        linear = self.srgb_to_linear(rgb)
-
-        M = np.array(
-            [
-                [0.4122214708, 0.5363325363, 0.0514459929],
-                [0.2119034982, 0.6806995451, 0.1073969566],
-                [0.0883024619, 0.2817188376, 0.6299787005],
-            ]
-        )
-        lms = linear @ M.T
-        lms = np.cbrt(lms)
-
-        lab = np.tensordot(
-            lms,
-            np.array(
-                [
-                    [0.2104542553, 0.7936177850, -0.0040720468],
-                    [1.9779984951, -2.4285922050, 0.4505937099],
-                    [0.0259040371, 0.7827717662, -0.8086757660],
-                ]
-            ),
-            axes=([2], [1]),
-        )
-
-        L, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
-        C = np.sqrt(a**2 + b**2)
-        H = np.arctan2(b, a)
-        H = np.degrees(H) % 360.0
-
-        return np.stack([L, C, H], axis=-1)
-
-    def oklch_to_rgb(self, oklch):
-        L, C, H = oklch[..., 0], oklch[..., 1], oklch[..., 2]
-        a = C * np.cos(np.radians(H))
-        b = C * np.sin(np.radians(H))
-
-        lab = np.stack([L, a, b], axis=-1)
-
-        lms = np.tensordot(
-            lab,
-            np.array(
-                [
-                    [1.0000000000, 0.3963377774, 0.2158037573],
-                    [1.0000000000, -0.1055613458, -0.0638541728],
-                    [1.0000000000, -0.0894841775, -1.2914855480],
-                ]
-            ),
-            axes=([2], [1]),
-        )
-        lms = lms**3
-
-        linear = np.tensordot(
-            lms,
-            np.array(
-                [
-                    [4.0767416621, -3.3077115913, 0.2309699292],
-                    [-1.2684380046, 2.6097574011, -0.3413193965],
-                    [-0.0041960863, -0.7034186147, 1.7076147010],
-                ]
-            ),
-            axes=([2], [1]),
-        )
-
-        rgb = self.linear_to_srgb(linear)
-        return np.clip(rgb, 0.0, 1.0)
 
     def parse_mapping(self, mapping_str: str) -> list[tuple[int, int]]:
         """Parses a string of mappings into a list of (input, output) pairs."""
@@ -303,11 +228,11 @@ class CurvesInvocation(BaseInvocation, WithMetadata, WithBoard):
                 method = {"lin": "linear", "cat": "catmull_rom", "cub": "cubic"}.get(method_abbrev)
 
             if channel == "L (OKLCH)":
-                oklch = self.rgb_to_oklch(arr_rgb)
+                oklch = rgb_to_oklch(arr_rgb)
                 L = oklch[..., 0]
                 interp = self.apply_interpolation(L, pts, method)
                 oklch[..., 0] = interp
-                arr_rgb = self.oklch_to_rgb(oklch)
+                arr_rgb = oklch_to_rgb(oklch)
             elif channel in ["R", "G", "B"]:
                 ch_index = {"R": 0, "G": 1, "B": 2}[channel]
                 interp = self.apply_interpolation(arr_rgb[..., ch_index], pts, method)

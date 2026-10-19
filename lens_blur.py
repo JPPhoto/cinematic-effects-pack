@@ -16,7 +16,7 @@ from invokeai.invocation_api import (
 )
 from PIL import Image
 
-from .util import MyDepthMapPipeline
+from .util import MyDepthMapPipeline  # noqa: TID252
 
 
 @invocation("lens_blur", title="Lens Blur", tags=["image", "lens", "blur"], version="1.1.0")

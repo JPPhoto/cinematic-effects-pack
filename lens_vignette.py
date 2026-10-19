@@ -13,6 +13,8 @@ from invokeai.invocation_api import (
 )
 from PIL import Image
 
+from .util import oklch_to_rgb, rgb_to_oklch  # noqa: TID252
+
 
 @invocation(
     "lens_vignette",
@@ -32,103 +34,6 @@ class LensVignetteInvocation(BaseInvocation, WithBoard, WithMetadata):
     center_x: float = InputField(default=0.5, ge=0.0, le=1.0, description="X coordinate of vignette center (0-1)")
     center_y: float = InputField(default=0.5, ge=0.0, le=1.0, description="Y coordinate of vignette center (0-1)")
     preserve_highlights: bool = InputField(default=True, description="Preserve highlights")
-
-    def srgb_to_oklch(self, rgb: np.ndarray) -> np.ndarray:
-        """Convert sRGB in [0,1] to OKLCH color space."""
-
-        # Step 1: Linearize sRGB
-        def linearize(c):
-            a = 0.055
-            return np.where(c <= 0.04045, c / 12.92, ((c + a) / (1 + a)) ** 2.4)
-
-        rgb = np.clip(rgb, 0.0, 1.0)
-        rgb_linear = linearize(rgb)
-
-        # Step 2: Convert linear RGB to LMS
-        lms = np.tensordot(
-            rgb_linear,
-            np.array(
-                [
-                    [0.4122214708, 0.5363325363, 0.0514459929],
-                    [0.2119034982, 0.6806995451, 0.1073969566],
-                    [0.0883024619, 0.2817188376, 0.6299787005],
-                ],
-                dtype=np.float64,
-            ),
-            axes=([rgb.ndim - 1], [1]),
-        )
-
-        lms = np.cbrt(lms)  # cube root
-
-        # Step 3: Convert LMS to OKLab
-        lab = np.tensordot(
-            lms,
-            np.array(
-                [
-                    [0.2104542553, 0.7936177850, -0.0040720468],
-                    [1.9779984951, -2.4285922050, 0.4505937099],
-                    [0.0259040371, 0.7827717662, -0.8086757660],
-                ],
-                dtype=np.float64,
-            ),
-            axes=([rgb.ndim - 1], [1]),
-        )
-
-        # Step 4: Convert to OKLCH
-        L, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
-        C = np.sqrt(a**2 + b**2)
-        eps = 1e-8
-        H = np.where(C > eps, np.mod(np.arctan2(b, a), 2 * np.pi), 0.0)
-        H *= 360.0 / (2 * np.pi)
-
-        return np.stack([L, C, H], axis=-1)
-
-    def oklch_to_srgb(self, oklch: np.ndarray) -> np.ndarray:
-        """Convert OKLCH to sRGB (gamma-encoded, clipped)."""
-        L, C, H = oklch[..., 0], oklch[..., 1], oklch[..., 2]
-        H /= 360.0 / (2 * np.pi)
-        a = C * np.cos(H)
-        b = C * np.sin(H)
-
-        # Step 1: OKLab to LMS cube roots
-        lab = np.stack([L, a, b], axis=-1)
-
-        lms = np.tensordot(
-            lab,
-            np.array(
-                [
-                    [1.0000000000, 0.3963377774, 0.2158037573],
-                    [1.0000000000, -0.1055613458, -0.0638541728],
-                    [1.0000000000, -0.0894841775, -1.2914855480],
-                ],
-                dtype=np.float64,
-            ),
-            axes=([lab.ndim - 1], [1]),
-        )
-
-        lms = lms**3  # cube
-
-        # Step 2: LMS to linear sRGB
-        rgb_linear = np.tensordot(
-            lms,
-            np.array(
-                [
-                    [4.0767416621, -3.3077115913, 0.2309699292],
-                    [-1.2684380046, 2.6097574011, -0.3413193965],
-                    [-0.0041960863, -0.7034186147, 1.7076147010],
-                ],
-                dtype=np.float64,
-            ),
-            axes=([lms.ndim - 1], [1]),
-        )
-
-        # Step 3: Gamma encode
-        def encode(c):
-            a = 0.055
-            c_safe = np.maximum(c, 0.0)
-            return np.where(c_safe <= 0.0031308, 12.92 * c_safe, (1 + a) * (c_safe ** (1 / 2.4)) - a)
-
-        return np.clip(encode(rgb_linear), 0.0, 1.0)
 
     def do_highlight_preservation(
         self, img_oklch: np.ndarray, img_vignetted: np.ndarray, highlights_vignetted: np.ndarray
@@ -163,7 +68,8 @@ class LensVignetteInvocation(BaseInvocation, WithBoard, WithMetadata):
         else:
             rgb, alpha = img[..., :3], img[..., 3:] if ch > 3 else None
 
-        img_oklch = self.srgb_to_oklch(rgb)
+        img_oklch = rgb_to_oklch(rgb)
+        img_oklch[..., 2] = np.where(img_oklch[..., 1] > 1e-8, img_oklch[..., 2], 0.0)
 
         height, width = img.shape[:2]
         y, x = np.mgrid[0:height, 0:width]
@@ -204,7 +110,7 @@ class LensVignetteInvocation(BaseInvocation, WithBoard, WithMetadata):
         else:
             img_oklch = img_vignetted
 
-        rgb_srgb = self.oklch_to_srgb(img_oklch)
+        rgb_srgb = oklch_to_rgb(img_oklch)
 
         if alpha is not None:
             out = np.concatenate([rgb_srgb, alpha], axis=2)
