@@ -8,7 +8,7 @@ Use this pack in place of its four source packs. Loading the old packs alongside
 
 The anamorphic nodes apply lens blur, anamorphic flares, spherical distortion, chromatic aberration, and lens vignetting.
 The pack also includes an aperture generator and loader. Feed either aperture output into Lens Blur for different bokeh
-shapes. The loader reads image presets from `anamorphic_tools/aperture_images`; add your own aperture images there.
+shapes. The loader reads image presets from `aperture_images`; add your own aperture images there.
 
 Lens Blur requires a depth map. Its aperture image input is optional.
 
@@ -18,15 +18,15 @@ Image → Lens Vignette → Lens Blur → Spherical Distortion → Chromatic Abe
 
 Examples:
 
-![Anamorphic example](https://github.com/user-attachments/assets/86b596f3-5f8a-4fc6-a9e1-fee613002729)
+![Anamorphic example](example_images/anamorphic-01.png)
 
-![Anamorphic example](https://github.com/user-attachments/assets/0ec688c5-5903-44d0-9e13-7c0d6bccb20d)
+![Anamorphic example](example_images/anamorphic-02.png)
 
-![Anamorphic example](https://github.com/user-attachments/assets/969a5668-e3d6-4727-96f4-352500dea1cc)
+![Anamorphic example](example_images/anamorphic-03.png)
 
-![Anamorphic example](https://github.com/user-attachments/assets/c34a0d03-cf65-4fc2-9eb6-e4feeebb4c53)
+![Anamorphic example](example_images/anamorphic-04.png)
 
-![Anamorphic example](https://github.com/user-attachments/assets/e56375f7-862a-4bfc-8b43-d284f8477cac)
+![Anamorphic example](example_images/anamorphic-05.png)
 
 ## Curves
 
