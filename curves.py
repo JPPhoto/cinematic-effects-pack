@@ -21,7 +21,7 @@ from .util import oklch_to_rgb, rgb_to_oklch  # noqa: TID252
 
 
 @invocation(
-    "curves_invocation", title="CurvesInvocation", tags=["curves", "interpolation", "dithering"], version="1.2.0"
+    "curves_invocation", title="CurvesInvocation", tags=["curves", "interpolation", "dithering"], version="1.2.1"
 )
 class CurvesInvocation(BaseInvocation, WithMetadata, WithBoard):
     """Applies interpolation and dithering to an image based on user inputs"""
@@ -83,22 +83,17 @@ class CurvesInvocation(BaseInvocation, WithMetadata, WithBoard):
                 return y0 + (x - x0) * (y1 - y0) / (x1 - x0)
         return pts[-1][1]
 
-    def spline_interpolation(self, x: float, points: list[tuple[float, float]]) -> float:
-        """Performs cubic spline interpolation using SciPy."""
-        pts = sorted(points, key=lambda p: p[0])
-        xs, ys = zip(*pts)
-        spline = CubicSpline(xs, ys)
-        return float(spline(x))
-
     def apply_interpolation(self, channel: np.ndarray, points: list[tuple[int, int]], method: str) -> np.ndarray:
         """Apply interpolation to a single-channel (2D) image array."""
-        h, w = channel.shape
-        out = np.empty((h, w), dtype=np.float32)
-
         # normalize control points once
         pts = [(xi / 255.0, yi / 255.0) for xi, yi in points]
-        method = self.interpolation_method
+        if method == "cubic":
+            pts = sorted(pts, key=lambda p: p[0])
+            xs, ys = zip(*pts)
+            return CubicSpline(xs, ys)(channel).astype(np.float32)
 
+        h, w = channel.shape
+        out = np.empty((h, w), dtype=np.float32)
         for y in range(h):
             row = channel[y]
             for x in range(w):
@@ -107,8 +102,6 @@ class CurvesInvocation(BaseInvocation, WithMetadata, WithBoard):
                     out[y, x] = self.catmull_rom_spline(v, pts)
                 elif method == "linear":
                     out[y, x] = self.linear_interpolation(v, pts)
-                elif method == "cubic":
-                    out[y, x] = self.spline_interpolation(v, pts)
                 else:
                     raise ValueError(f"Unsupported interpolation: {method}")
 
