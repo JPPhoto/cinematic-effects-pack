@@ -15,13 +15,15 @@ from invokeai.invocation_api import (
     invocation,
 )
 from PIL import Image
-from scipy.interpolate import CubicSpline
+from scipy.interpolate import CubicSpline, PchipInterpolator
 
 from .util import oklch_to_rgb, rgb_to_oklch  # noqa: TID252
 
+_INTERPOLATION_METHODS = {"lin": "linear", "cat": "catmull_rom", "cub": "cubic", "pch": "pchip"}
+
 
 @invocation(
-    "curves_invocation", title="CurvesInvocation", tags=["curves", "interpolation", "dithering"], version="1.2.1"
+    "curves_invocation", title="CurvesInvocation", tags=["curves", "interpolation", "dithering"], version="1.3.0"
 )
 class CurvesInvocation(BaseInvocation, WithMetadata, WithBoard):
     """Applies interpolation and dithering to an image based on user inputs"""
@@ -30,7 +32,7 @@ class CurvesInvocation(BaseInvocation, WithMetadata, WithBoard):
     mapping_str: str = InputField(
         description="String of input-output mappings", default="0:0,64:48,128:128,200:240,255:255"
     )
-    interpolation_method: Literal["catmull_rom", "linear", "cubic"] = InputField(
+    interpolation_method: Literal["catmull_rom", "linear", "cubic", "pchip"] = InputField(
         default="catmull_rom", description="Interpolation method"
     )
     dithering_method: Literal["none", "blue_noise", "floyd_steinberg", "ordered"] = InputField(
@@ -87,10 +89,11 @@ class CurvesInvocation(BaseInvocation, WithMetadata, WithBoard):
         """Apply interpolation to a single-channel (2D) image array."""
         # normalize control points once
         pts = [(xi / 255.0, yi / 255.0) for xi, yi in points]
-        if method == "cubic":
+        if method in ("cubic", "pchip"):
             pts = sorted(pts, key=lambda p: p[0])
             xs, ys = zip(*pts)
-            return CubicSpline(xs, ys)(channel).astype(np.float32)
+            interpolator = CubicSpline if method == "cubic" else PchipInterpolator
+            return interpolator(xs, ys)(channel).astype(np.float32)
 
         h, w = channel.shape
         out = np.empty((h, w), dtype=np.float32)
@@ -218,7 +221,7 @@ class CurvesInvocation(BaseInvocation, WithMetadata, WithBoard):
             if method_abbrev is None:
                 method = self.interpolation_method
             else:
-                method = {"lin": "linear", "cat": "catmull_rom", "cub": "cubic"}.get(method_abbrev)
+                method = _INTERPOLATION_METHODS.get(method_abbrev)
 
             if channel == "L (OKLCH)":
                 oklch = rgb_to_oklch(arr_rgb)
@@ -262,7 +265,7 @@ class CurvesInvocation(BaseInvocation, WithMetadata, WithBoard):
         """
         s = s.strip()
         ops: list[tuple[list[str] | None, str | None, list[tuple[int, int]]]] = []
-        pat = re.compile(r"(?:(RGB|R|G|B|L)(?:\[(lin|cat|cub)\])?)?\(([^)]*)\)")
+        pat = re.compile(r"(?:(RGB|R|G|B|L)(?:\[(lin|cat|cub|pch)\])?)?\(([^)]*)\)")
         matches = list(pat.finditer(s))
         if matches:
             for m in matches:
